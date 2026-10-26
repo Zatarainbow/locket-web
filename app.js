@@ -259,6 +259,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderFriendsChips();
   renderIconsGrid();
   applySelectedIcon(state.currentIcon);
+  renderFeed();
+  renderWidgets();
 
   // Initialize session directly from client storage or local config
   await initSession();
@@ -393,8 +395,11 @@ const LocketCloud = {
     return data.result || data.data || data;
   },
 
-  async getFeed() {
-    const friends = await this.getFriends();
+  async getFeed(knownFriends = null) {
+    let friends = knownFriends || state.friends;
+    if (!friends || friends.length === 0) {
+      friends = await this.getFriends();
+    }
     const friendUids = (friends || []).map(f => f.id).filter(Boolean);
 
     const allMoments = [];
@@ -406,7 +411,7 @@ const LocketCloud = {
         should_count_missed_moments: true,
         include_group_moments: true
       });
-      const initItems = initialRes.data || initialRes.moments || [];
+      const initItems = Array.isArray(initialRes) ? initialRes : (initialRes.data || initialRes.moments || []);
       for (const m of initItems) {
         const mid = m.canonical_uid || m.id || m.moment_uid;
         if (mid && !seenMids.has(mid)) {
@@ -420,7 +425,7 @@ const LocketCloud = {
 
     // 2. Fetch moments across all friends in parallel batches
     if (friendUids.length > 0) {
-      const batchSize = 5;
+      const batchSize = 6;
       for (let i = 0; i < friendUids.length; i += batchSize) {
         const batch = friendUids.slice(i, i + batchSize);
         await Promise.all(batch.map(async (targetUid) => {
@@ -431,7 +436,7 @@ const LocketCloud = {
               include_group_moments: true,
               excluded_users: others
             });
-            const items = res.data || res.moments || [];
+            const items = Array.isArray(res) ? res : (res.data || res.moments || []);
             for (const m of items) {
               const mid = m.canonical_uid || m.id || m.moment_uid;
               if (mid && !seenMids.has(mid)) {
@@ -457,7 +462,7 @@ const LocketCloud = {
   async getFriends() {
     const session = this.getSession();
     const token = await this.getValidToken();
-    if (!session || !token) return [];
+    if (!session || !token) return state.friends || [];
 
     try {
       const res = await fetch(`${this.FIRESTORE_BASE}/users/${session.uid}/friends`, {
@@ -466,29 +471,34 @@ const LocketCloud = {
       if (!res.ok) throw new Error('Friends list error');
       const data = await res.json();
       const docs = data.documents || [];
-      const friends = [];
-      for (const d of docs) {
-        const fuid = d.name.split('/').pop();
+      const friendUids = docs.map(d => d.fields?.user?.stringValue || d.name.split('/').pop()).filter(Boolean);
+
+      // Fast parallel user profile retrieval with caching
+      const friends = await Promise.all(friendUids.map(async (fuid) => {
+        const cached = (state.friends || []).find(f => f.id === fuid);
+        if (cached && cached.name && cached.name !== 'Friend') {
+          return cached;
+        }
         try {
           const ures = await this.callApi('fetchUserV2', { user_uid: fuid });
           const udata = ures.data || ures;
           if (udata) {
-            friends.push({
+            return {
               id: fuid,
               name: (udata.first_name ? `${udata.first_name} ${udata.last_name || ''}` : udata.username || 'Friend').trim(),
               username: udata.username || 'user',
               avatar: toCdnUrl(udata.profile_picture_url) || AESTHETIC_PRESETS[0],
               streak: udata.streak || 1
-            });
-            continue;
+            };
           }
         } catch (e) {}
-        friends.push({ id: fuid, name: 'Friend', username: 'friend', avatar: AESTHETIC_PRESETS[0], streak: 1 });
-      }
+        return cached || { id: fuid, name: 'Friend', username: 'friend', avatar: AESTHETIC_PRESETS[0], streak: 1 };
+      }));
+
       return friends;
     } catch (e) {
       console.warn('Direct getFriends error, fallback to cache:', e);
-      return [];
+      return state.friends || [];
     }
   },
 
@@ -505,61 +515,23 @@ const LocketCloud = {
     const encodedName = encodeURIComponent(objectPath);
     const baseUrl = isVideo ? this.STORAGE_VIDEO_URL : this.STORAGE_IMG_URL;
 
-    // Resumable upload initiation
-    const initUrl = `${baseUrl}/${encodedName}?uploadType=resumable&name=${encodedName}`;
-    const initRes = await fetch(initUrl, {
+    // Direct single-request binary media upload (100% browser CORS compatible, no blocked Location headers)
+    const uploadRes = await fetch(`${baseUrl}?uploadType=media&name=${encodedName}`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json; charset=UTF-8',
         'Authorization': `Firebase ${token}`,
-        'x-goog-upload-protocol': 'resumable',
-        'x-goog-upload-command': 'start',
-        'x-goog-upload-content-type': contentType,
-        'x-goog-upload-content-length': String(blob.size),
-        'x-firebase-storage-version': 'ios/12.12.1',
-        'x-firebase-gmpid': this.FIREBASE_APP_ID
-      },
-      body: JSON.stringify({
-        bucket: '',
-        contentType: contentType,
-        name: objectPath,
-        metadata: { visibility: 'private', creator: session.uid },
-        cacheControl: 'public, max-age=604800'
-      })
-    });
-
-    if (!initRes.ok) {
-      throw new Error(`Upload init failed (${initRes.status})`);
-    }
-
-    const uploadUrl = initRes.headers.get('x-goog-upload-url');
-    if (!uploadUrl) throw new Error('Missing upload URL from Firebase Storage');
-
-    // Transfer binary stream directly
-    const uploadRes = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'x-goog-upload-protocol': 'resumable',
-        'x-goog-upload-command': 'upload, finalize',
-        'x-goog-upload-offset': '0',
-        'x-goog-upload-content-length': String(blob.size)
+        'Content-Type': contentType
       },
       body: blob
     });
 
     if (!uploadRes.ok) {
-      throw new Error(`Upload transfer failed (${uploadRes.status})`);
+      const errText = await uploadRes.text().catch(() => '');
+      throw new Error(`Upload failed (${uploadRes.status}): ${errText}`);
     }
 
-    let downloadToken = '';
-    try {
-      const uJson = await uploadRes.json();
-      if (uJson.downloadTokens) {
-        downloadToken = uJson.downloadTokens.split(',')[0];
-      }
-    } catch (e) {}
-
+    const uJson = await uploadRes.json();
+    const downloadToken = (uJson.downloadTokens || '').split(',')[0] || this.randomId(36);
     return `${baseUrl}/${encodedName}?alt=media&token=${downloadToken}`;
   },
 
@@ -619,7 +591,13 @@ const LocketCloud = {
       payload.video_url = videoUrl;
     }
 
-    return await this.callApi('postMomentV2', payload);
+    const res = await this.callApi('postMomentV2', payload);
+    return {
+      result: res,
+      data: res.data || res,
+      thumbnail_url: thumbUrl || videoUrl,
+      video_url: videoUrl
+    };
   },
 
   async deleteMoment(momentUid) {
@@ -670,8 +648,22 @@ async function initSession() {
         state.isAuthenticated = true;
         state.currentUser = { uid: session.uid, email: session.email };
         updateAuthUI(true, state.currentUser);
-        await fetchLiveFriends();
-        await fetchLiveFeed();
+
+        // Fetch user profile in background to get real name, username and avatar
+        LocketCloud.callApi('fetchUserV2', { user_uid: session.uid }).then(res => {
+          const u = res?.data || res;
+          if (u) {
+            state.currentUser.username = u.username;
+            state.currentUser.displayName = (u.first_name ? `${u.first_name} ${u.last_name || ''}` : u.username || 'You').trim();
+            state.currentUser.avatar = toCdnUrl(u.profile_picture_url);
+            updateAuthUI(true, state.currentUser);
+          }
+        }).catch(() => {});
+
+        // Concurrently refresh friends & live moments in background without blocking
+        fetchLiveFriends().catch(console.warn);
+        fetchLiveFeed().catch(console.warn);
+
         showToast('Connected directly to Locket Cloud ⚡️');
         return;
       }
@@ -774,9 +766,9 @@ async function fetchLiveFriends() {
 
 async function fetchLiveFeed() {
   try {
-    const moments = await LocketCloud.getFeed();
+    const moments = await LocketCloud.getFeed(state.friends);
     if (Array.isArray(moments) && moments.length > 0) {
-      state.lockets = moments.map(m => {
+      const liveList = moments.map(m => {
         let caption = m.caption || '';
         let badge = m.badge || null;
         let isGold = false;
@@ -805,9 +797,10 @@ async function fetchLiveFeed() {
           } catch(e) {}
         }
         const friend = (state.friends || []).find(f => f.id === m.user);
-        const senderName = friend ? friend.name : (m.user_name || (m.user ? `Friend (${m.user.slice(0, 5)})` : 'Friend'));
-        const senderUsername = friend ? friend.username : (m.username || m.user_username || 'user');
-        const senderAvatar = friend ? friend.avatar : (toCdnUrl(m.user_avatar) || AESTHETIC_PRESETS[0]);
+        const isSelf = m.user === state.currentUser?.uid;
+        const senderName = isSelf ? (state.currentUser?.displayName || 'You') : (friend ? friend.name : (m.user_name || (m.user ? `Friend (${m.user.slice(0, 5)})` : 'Friend')));
+        const senderUsername = isSelf ? (state.currentUser?.username || 'you') : (friend ? friend.username : (m.username || m.user_username || 'user'));
+        const senderAvatar = isSelf ? (state.currentUser?.avatar || AESTHETIC_PRESETS[0]) : (friend ? friend.avatar : (toCdnUrl(m.user_avatar) || AESTHETIC_PRESETS[0]));
 
         return {
           id: m.canonical_uid || m.id || m.moment_uid,
@@ -828,6 +821,17 @@ async function fetchLiveFeed() {
           reactions: m.reactions || { '❤️': 0, '🔥': 0 }
         };
       });
+
+      // Preserve any just-sent local moments if not yet indexed by Locket Cloud
+      const seenIds = new Set(liveList.map(l => l.id));
+      for (const loc of state.lockets) {
+        if (!seenIds.has(loc.id) && loc.timestamp === 'Just now') {
+          liveList.unshift(loc);
+          seenIds.add(loc.id);
+        }
+      }
+
+      state.lockets = liveList;
 
       // Strict chronological sorting: NEWEST ON TOP
       state.lockets.sort((a, b) => {
@@ -1449,7 +1453,7 @@ async function sendLocket() {
       const isGold = state.noteType === 'gold';
       const recipients = state.activeRecipient !== 'all' ? [state.activeRecipient] : [];
 
-      await LocketCloud.postMoment({
+      const postResult = await LocketCloud.postMoment({
         imageBlob,
         videoBlob,
         caption,
@@ -1458,9 +1462,35 @@ async function sendLocket() {
         isGold
       });
 
+      // Immediately display newly posted moment at top of feed & local widgets
+      const postedData = postResult?.data || {};
+      const newMoment = {
+        id: postedData.canonical_uid || ('m_' + Date.now()),
+        canonical_uid: postedData.canonical_uid || ('m_' + Date.now()),
+        user_uid: state.currentUser?.uid,
+        sender: {
+          name: state.currentUser?.displayName || 'You',
+          username: state.currentUser?.username || 'you',
+          avatar: state.currentUser?.avatar || AESTHETIC_PRESETS[0]
+        },
+        imageUrl: postResult?.thumbnail_url || toCdnUrl(postedData.thumbnail_url),
+        videoUrl: postResult?.video_url || toCdnUrl(postedData.video_url) || null,
+        caption: caption,
+        isGold: isGold,
+        musicBadge: isGold ? 'gold' : null,
+        timestamp: 'Just now',
+        created_at: new Date().toISOString(),
+        reactions: {}
+      };
+
+      state.lockets.unshift(newMoment);
+      saveState();
+      renderFeed();
+      renderWidgets();
+
       sfx.playGoldChime();
       showToast('Live moment published directly to friends’ widgets! 🚀');
-      await fetchLiveFeed();
+      fetchLiveFeed().catch(() => {});
     } catch (err) {
       console.error('Direct cloud upload error:', err);
       showToast(`Upload error: ${err.message}`);
