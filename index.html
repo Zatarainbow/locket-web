@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Locket Widget • Live pics from your friends</title>
+  <link id="dynamic-favicon" rel="icon" type="image/webp" href="./assets/icons/ic_gold_on_black.webp">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body class="bg-[#060505] text-white flex flex-col items-center justify-start min-h-screen">
+
+  <!-- TOP APP BAR -->
+  <header class="w-full max-w-md px-4 py-3 flex items-center justify-between z-30 sticky top-0 bg-[#060505]/90 backdrop-blur-md border-b border-zinc-900">
+    <!-- Left: Profile / Gold Status -->
+    <button onclick="openModal('gold-modal')" class="flex items-center gap-2 p-1.5 rounded-full hover:bg-zinc-800 transition active:scale-95" title="Locket Gold & Icons">
+      <div class="relative w-9 h-9 rounded-full overflow-hidden border-2 border-yellow-400 shadow-md">
+        <img id="header-app-logo" src="./assets/icons/ic_gold_on_black.webp" alt="Locket" class="w-full h-full object-cover">
+      </div>
+      <span class="text-xs font-bold text-yellow-400 tracking-wide flex items-center gap-1">
+        <span>GOLD</span>
+        <span class="text-[10px]">✨</span>
+      </span>
+    </button>
+
+    <!-- Center: View Mode Toggle -->
+    <div class="flex items-center bg-zinc-900 border border-zinc-800 rounded-full p-1 shadow-inner">
+      <button id="view-toggle-app" onclick="toggleView('app')" class="px-3 py-1 rounded-full text-xs font-bold bg-yellow-400 text-black transition shadow">
+        📱 App
+      </button>
+      <button id="view-toggle-widget" onclick="toggleView('widget')" class="px-3 py-1 rounded-full text-xs font-bold text-zinc-400 hover:text-white transition">
+        🖥️ Widgets
+      </button>
+    </div>
+
+    <!-- Right: Login or Account Status -->
+    <div class="flex items-center gap-2">
+      <!-- Login Button (when logged out) -->
+      <button id="top-login-btn" onclick="openModal('login-modal')" class="px-3 py-1.5 rounded-full bg-yellow-400 hover:bg-yellow-300 text-black font-bold text-xs shadow transition active:scale-95 flex items-center gap-1">
+        <span>Log In</span>
+        <span class="text-xs">🔐</span>
+      </button>
+
+      <!-- Connected User Badge (when logged in) -->
+      <div id="top-user-badge" class="hidden flex items-center gap-1.5">
+        <button onclick="handleLogout()" class="px-2.5 py-1 rounded-full bg-zinc-900 border border-emerald-500/40 text-emerald-400 text-xs font-semibold hover:border-red-500 hover:text-red-400 transition flex items-center gap-1" title="Click to Log Out">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span id="top-user-email" class="max-w-[70px] truncate text-[11px]">User</span>
+        </button>
+      </div>
+
+      <!-- Friends / Streaks Button -->
+      <button onclick="openModal('friends-modal')" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition active:scale-95" title="Friends & Streaks">
+        <span class="text-xs">👥</span>
+        <span class="text-xs font-bold text-orange-400">🔥</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER (Mobile aspect wrapper) -->
+  <main class="w-full max-w-md flex-1 flex flex-col px-4 pb-12">
+
+    <!-- RECIPIENT SELECTOR CHIPS -->
+    <div class="py-3 overflow-x-auto no-scrollbar flex items-center gap-2" id="recipient-chips-container">
+      <!-- Generated via JS -->
+    </div>
+
+    <!-- ============================================== -->
+    <!-- VIEW 1: APP / CAMERA & FEED                   -->
+    <!-- ============================================== -->
+    <section id="app-camera-view" class="flex flex-col gap-4 w-full">
+      
+      <!-- LIVE CAMERA FILTER SELECTOR PILLS -->
+      <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+        <button onclick="setCameraFilter('filter-normal')" class="filter-pill active px-3 py-1 rounded-full glass-pill text-xs font-semibold text-white hover:border-yellow-400 whitespace-nowrap transition">Normal</button>
+        <button onclick="setCameraFilter('filter-golden-hour')" class="filter-pill px-3 py-1 rounded-full glass-pill text-xs font-semibold text-amber-300 hover:border-amber-400 whitespace-nowrap transition">Golden Hour 🌅</button>
+        <button onclick="setCameraFilter('filter-vintage-noir')" class="filter-pill px-3 py-1 rounded-full glass-pill text-xs font-semibold text-zinc-300 hover:border-white whitespace-nowrap transition">Noir 🎞</button>
+        <button onclick="setCameraFilter('filter-retro-film')" class="filter-pill px-3 py-1 rounded-full glass-pill text-xs font-semibold text-orange-200 hover:border-orange-400 whitespace-nowrap transition">Retro Film 📷</button>
+        <button onclick="setCameraFilter('filter-cyberpunk')" class="filter-pill px-3 py-1 rounded-full glass-pill text-xs font-semibold text-cyan-400 hover:border-cyan-400 whitespace-nowrap transition">Cyberpunk ⚡</button>
+        <button onclick="setCameraFilter('filter-warm-sunset')" class="filter-pill px-3 py-1 rounded-full glass-pill text-xs font-semibold text-rose-300 hover:border-rose-400 whitespace-nowrap transition">Warm Sunset 🌇</button>
+      </div>
+
+      <!-- SQUARE VIEWFINDER CONTAINER -->
+      <div class="relative aspect-square w-full rounded-[36px] overflow-hidden bg-black border border-zinc-800 shadow-2xl">
+        
+        <!-- Live Video Element -->
+        <video id="camera-feed" autoplay playsinline muted class="w-full h-full object-cover filter-normal transition-all duration-300"></video>
+
+        <!-- Fallback Aesthetic Photo (If Camera Blocked) -->
+        <div id="camera-fallback" class="hidden relative w-full h-full">
+          <img id="fallback-preview-img" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=700&q=80" alt="Preset" class="w-full h-full object-cover filter-normal transition-all duration-300">
+          <div class="absolute bottom-3 left-3">
+            <span class="glass-pill px-2.5 py-1 rounded-full text-[11px] text-zinc-300 font-medium">Virtual Lens ✨</span>
+          </div>
+        </div>
+
+        <!-- Video Recording Indicator Bar (When Recording) -->
+        <div id="recording-progress-bar" class="hidden absolute top-0 left-0 right-0 h-1.5 bg-red-500 z-30 transition-all duration-100 ease-linear" style="width: 0%;"></div>
+        <div id="recording-timer-badge" class="hidden absolute top-4 left-4 glass-pill px-3 py-1 rounded-full flex items-center gap-2 z-30">
+          <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></span>
+          <span id="recording-timer-text" class="text-xs font-bold text-white tracking-wider">00:00 / 01:30</span>
+        </div>
+
+        <!-- Overlaid Camera Controls (Top Right) -->
+        <div class="absolute top-4 right-4 flex flex-col gap-3 z-10">
+          <button onclick="toggleCameraFacing()" class="w-10 h-10 rounded-full glass-pill flex items-center justify-center hover:bg-black/80 transition active:scale-90" title="Flip Camera">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          </button>
+
+          <button id="flash-toggle-btn" onclick="toggleFlash()" class="w-10 h-10 rounded-full glass-pill flex items-center justify-center hover:bg-black/80 transition active:scale-90 text-white" title="Flash Toggle">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          </button>
+        </div>
+
+        <!-- Camera Flash Overlay -->
+        <div id="camera-flash-overlay" class="hidden absolute inset-0 bg-white pointer-events-none z-20"></div>
+
+        <!-- POST CAPTURE PREVIEW OVERLAY (Photo or Video) -->
+        <div id="post-capture-container" class="hidden absolute inset-0 bg-black z-20 flex flex-col justify-between">
+          <img id="post-capture-img" src="" alt="Captured moment" class="absolute inset-0 w-full h-full object-cover">
+          <video id="post-capture-video" playsinline loop class="hidden absolute inset-0 w-full h-full object-cover"></video>
+          
+          <!-- Top Bar: Retake & Status -->
+          <div class="relative z-10 p-4 flex items-center justify-between">
+            <button onclick="cancelCapture()" class="w-10 h-10 rounded-full glass-pill flex items-center justify-center hover:bg-black/80 transition active:scale-90">
+              <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+            <div id="post-capture-badge" class="glass-pill px-3 py-1 rounded-full text-xs font-semibold text-yellow-400 flex items-center gap-1.5">
+              <span>Ready to Send</span>
+              <span>⚡️</span>
+            </div>
+          </div>
+
+          <!-- Bottom: Badge Presets, Caption & Send Button -->
+          <div class="relative z-10 p-4 flex flex-col gap-2.5 bg-gradient-to-t from-black/95 via-black/60 to-transparent pt-8">
+            <!-- Overlays & Sticker Presets Drawer -->
+            <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 text-xs">
+              <!-- Official Locket Gold Badge Button -->
+              <button id="badge-gold-btn" onclick="toggleGoldBadge()" class="px-3 py-1 rounded-full bg-yellow-400/20 text-yellow-300 border border-yellow-400/40 hover:bg-yellow-400 hover:text-black font-extrabold whitespace-nowrap flex items-center gap-1 transition shadow-sm" title="Attach Locket Gold VIP Badge">
+                <span>💛</span> <span>Locket Gold</span>
+              </button>
+
+              <button onclick="applyNoteType('time')" class="px-2.5 py-1 rounded-full glass-pill text-white hover:border-yellow-400 whitespace-nowrap flex items-center gap-1">
+                <span>🕒</span> <span>Time</span>
+              </button>
+              <button onclick="applyNoteType('location')" class="px-2.5 py-1 rounded-full glass-pill text-white hover:border-yellow-400 whitespace-nowrap flex items-center gap-1">
+                <span>📍</span> <span>Hà Nội</span>
+              </button>
+              <button onclick="applyNoteType('weather')" class="px-2.5 py-1 rounded-full glass-pill text-white hover:border-yellow-400 whitespace-nowrap flex items-center gap-1">
+                <span>☀️</span> <span>28°C</span>
+              </button>
+              <button onclick="applyNoteType('music')" class="px-2.5 py-1 rounded-full glass-pill text-emerald-400 hover:border-emerald-400 whitespace-nowrap flex items-center gap-1">
+                <span>🎵</span> <span>Spotify</span>
+              </button>
+              <button onclick="applyNoteType('review')" class="px-2.5 py-1 rounded-full glass-pill text-yellow-400 hover:border-yellow-400 whitespace-nowrap flex items-center gap-1">
+                <span>⭐️</span> <span>5 Stars</span>
+              </button>
+              <button onclick="setBadgePreset('custom_4281443912454362723', '😤 Dỗi rồi')" class="px-2.5 py-1 rounded-full glass-pill text-white hover:border-yellow-400 whitespace-nowrap">😤 Dỗi rồi</button>
+              <button onclick="setBadgePreset('custom_4278420056830692855', '💭 Đang bận tương tư')" class="px-2.5 py-1 rounded-full glass-pill text-white hover:border-yellow-400 whitespace-nowrap">💭 Tương tư</button>
+              <button onclick="setBadgePreset('custom_-5230082930652109611', '📩 Rep tin nhắn đi')" class="px-2.5 py-1 rounded-full glass-pill text-white hover:border-yellow-400 whitespace-nowrap">📩 Rep tin đi</button>
+              <button onclick="setBadgePreset('custom_-3194172128167113174', '🐤 Mỏ hỗn nhưng tâm hiền')" class="px-2.5 py-1 rounded-full glass-pill text-white hover:border-yellow-400 whitespace-nowrap">🐤 Mỏ hỗn</button>
+              <button onclick="setBadgePreset('custom_951140262642706115', '🫂 Muốn được ôm')" class="px-2.5 py-1 rounded-full glass-pill text-white hover:border-yellow-400 whitespace-nowrap">🫂 Ôm</button>
+              <button onclick="setBadgePreset('custom_-7748601173102319221', '🗡️ Hảo hán')" class="px-2.5 py-1 rounded-full glass-pill text-white hover:border-yellow-400 whitespace-nowrap">🗡️ Hảo hán</button>
+              <button onclick="setBadgePreset('custom_5236262895016786086', '💅 Xinh gái ấn phím 1')" class="px-2.5 py-1 rounded-full glass-pill text-white hover:border-yellow-400 whitespace-nowrap">💅 Xinh gái</button>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <div class="flex-1 glass-pill rounded-full px-4 py-2.5 flex items-center shadow-lg border border-white/20">
+                <input id="caption-input" type="text" placeholder="Add a caption..." maxlength="60" class="bg-transparent text-sm text-white placeholder-zinc-400 focus:outline-none w-full font-medium">
+              </div>
+              <button id="send-post-btn" onclick="sendLocket()" class="w-12 h-12 rounded-full bg-yellow-400 hover:bg-yellow-300 text-black flex items-center justify-center shadow-xl transition transform active:scale-90" title="Send to Friends">
+                <svg class="w-6 h-6 transform rotate-45" fill="currentColor" viewBox="0 0 20 20"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"/></svg>
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- CAMERA MODE TOGGLE (PHOTO vs VIDEO + DURATION SELECTOR) -->
+      <div class="flex flex-col items-center gap-1.5 py-1">
+        <div class="flex items-center justify-center gap-6">
+          <button id="mode-btn-photo" onclick="setCaptureMode('photo')" class="text-xs font-bold text-yellow-400 border-b-2 border-yellow-400 pb-0.5 tracking-wide uppercase transition">Photo</button>
+          <button id="mode-btn-video" onclick="setCaptureMode('video')" class="text-xs font-bold text-zinc-400 hover:text-white pb-0.5 tracking-wide uppercase transition flex items-center gap-1">
+            <span>Video</span>
+            <span class="px-1.5 py-0.2 bg-amber-400/20 text-amber-300 text-[10px] rounded-full font-bold">Gold 30m</span>
+          </button>
+        </div>
+
+        <!-- Video Max Duration Preset Switcher (Visible in Video Mode) -->
+        <div id="video-duration-selector" class="hidden flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-zinc-400 overflow-x-auto no-scrollbar max-w-full">
+          <span class="text-zinc-500">Max:</span>
+          <button onclick="setVideoDuration(10)" id="dur-btn-10" class="px-2 py-0.5 rounded-full hover:text-white transition">10s</button>
+          <button onclick="setVideoDuration(30)" id="dur-btn-30" class="px-2 py-0.5 rounded-full hover:text-white transition">30s</button>
+          <button onclick="setVideoDuration(90)" id="dur-btn-90" class="px-2 py-0.5 rounded-full bg-yellow-400 text-black font-bold transition">90s</button>
+          <button onclick="setVideoDuration(180)" id="dur-btn-180" class="px-2 py-0.5 rounded-full hover:text-white transition">3m</button>
+          <button onclick="setVideoDuration(300)" id="dur-btn-300" class="px-2 py-0.5 rounded-full hover:text-white transition">5m</button>
+          <button onclick="setVideoDuration(600)" id="dur-btn-600" class="px-2 py-0.5 rounded-full hover:text-white transition">10m</button>
+          <button onclick="setVideoDuration(1800)" id="dur-btn-1800" class="px-2 py-0.5 rounded-full hover:text-white transition text-yellow-300">30m ⚡️</button>
+        </div>
+      </div>
+
+      <!-- CAMERA SHUTTER & BOTTOM CONTROLS -->
+      <div id="viewfinder-container" class="flex items-center justify-around py-2">
+        <label class="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center cursor-pointer hover:bg-zinc-800 transition active:scale-90" title="Upload Photo or Video">
+          <input type="file" accept="image/*,video/*" class="hidden" onchange="handleFileUpload(event)">
+          <svg class="w-5 h-5 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        </label>
+
+        <!-- Dynamic Shutter Button (Tap for Photo, Tap/Hold for Video) -->
+        <button id="shutter-btn" onclick="handleShutterClick()" class="relative w-20 h-20 rounded-full shutter-outer flex items-center justify-center shadow-2xl focus:outline-none" title="Snap Locket">
+          <div class="w-16 h-16 rounded-full bg-white border-4 border-yellow-400 flex items-center justify-center transition-all duration-200">
+            <div id="shutter-inner-dot" class="w-6 h-6 rounded-full bg-yellow-400 transition-all duration-200"></div>
+          </div>
+        </button>
+
+        <button onclick="updateFallbackImage(); takePhoto();" class="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center hover:bg-zinc-800 transition active:scale-90" title="Test Snap Preset">
+          <span class="text-lg">🎲</span>
+        </button>
+      </div>
+
+      <!-- DAILY ROLL CALL BANNER (Native APK Video Challenge) -->
+      <div class="mt-2 p-3 rounded-[24px] bg-gradient-to-r from-amber-500/10 via-yellow-500/10 to-zinc-900 border border-yellow-500/20 flex items-center justify-between shadow-lg">
+        <div class="flex items-center gap-3">
+          <div class="relative w-12 h-12 rounded-2xl overflow-hidden bg-black border border-yellow-400/50 flex-shrink-0">
+            <video src="./assets/video/assets_video_rollcall_onboarding.mp4" autoplay loop muted playsinline class="w-full h-full object-cover"></video>
+            <div class="absolute inset-0 bg-black/20"></div>
+          </div>
+          <div>
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs font-bold text-yellow-400">🔥 Daily Roll Call</span>
+              <span class="px-1.5 py-0.2 rounded-full bg-yellow-400/20 text-yellow-300 text-[10px] font-bold">Today</span>
+            </div>
+            <p class="text-[11px] text-zinc-300">Show what you're doing right now!</p>
+          </div>
+        </div>
+        <button onclick="joinRollCall()" class="px-3 py-1.5 rounded-full bg-yellow-400 hover:bg-yellow-300 text-black font-bold text-xs shadow transition active:scale-95 flex-shrink-0">
+          Join 📸
+        </button>
+      </div>
+
+      <!-- MEMORIES / TIMELINE FEED SECTION -->
+      <div class="mt-3 pt-3 border-t border-zinc-900">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span class="text-xs font-bold uppercase tracking-wider text-zinc-300">Live Friends Moments</span>
+          </div>
+
+          <button onclick="openModal('rewind-modal')" class="text-xs text-yellow-400 hover:underline flex items-center gap-1 font-semibold">
+            <span>Rewind</span>
+            <span>💫</span>
+          </button>
+        </div>
+
+        <!-- Chronological Feed List -->
+        <div id="feed-container">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ============================================== -->
+    <!-- VIEW 2: HOME SCREEN WIDGET SIMULATOR           -->
+    <!-- ============================================== -->
+    <section id="home-screen-view" class="hidden flex flex-col gap-6 w-full">
+      
+      <!-- Home Screen Mockup Frame -->
+      <div class="relative w-full rounded-[44px] p-6 bg-gradient-to-b from-slate-900 via-indigo-950 to-zinc-950 border-4 border-zinc-700 shadow-2xl overflow-hidden">
+        
+        <!-- Phone Status Bar -->
+        <div class="flex items-center justify-between text-xs text-white/80 font-medium px-2 mb-6">
+          <span>9:41</span>
+          <div class="w-24 h-4 bg-black rounded-full mx-auto"></div>
+          <div class="flex items-center gap-1">
+            <span>5G</span>
+            <span>100%</span>
+          </div>
+        </div>
+
+        <!-- Frame Customization Bar -->
+        <div class="glass-pill p-2 rounded-2xl mb-6 flex items-center justify-between">
+          <span class="text-xs font-semibold text-zinc-300 ml-2">Widget Frame:</span>
+          <div class="flex items-center gap-1.5">
+            <button onclick="selectFrame('frame-classic')" class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-zinc-800 text-white hover:bg-zinc-700">Classic</button>
+            <button onclick="selectFrame('frame-gold')" class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-yellow-400 text-black">Gold 🌟</button>
+            <button onclick="selectFrame('frame-neon')" class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-cyan-400 text-black">Neon ⚡️</button>
+            <button onclick="selectFrame('frame-hearts')" class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500 text-white">Hearts ❤️</button>
+          </div>
+        </div>
+
+        <!-- Small 2x2 Widget Section -->
+        <div class="mb-6">
+          <div class="flex items-center justify-between mb-2 px-1">
+            <span class="text-xs font-bold text-white/70">Small Widget (2x2)</span>
+            <span class="text-[11px] text-zinc-400">Updates instantly</span>
+          </div>
+          <div class="w-48 mx-auto">
+            <div id="widget-small-preview">
+              <!-- Rendered via JS -->
+            </div>
+            <div class="text-center mt-2">
+              <span class="text-xs font-semibold text-white/90 drop-shadow">Locket</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Medium 4x2 Widget Section -->
+        <div class="mb-6">
+          <div class="flex items-center justify-between mb-2 px-1">
+            <span class="text-xs font-bold text-white/70">Medium Widget (4x2)</span>
+            <span class="text-[11px] text-zinc-400">Dual Moments</span>
+          </div>
+          <div id="widget-medium-preview">
+            <!-- Rendered via JS -->
+          </div>
+          <div class="text-center mt-2">
+            <span class="text-xs font-semibold text-white/90 drop-shadow">Locket Recap</span>
+          </div>
+        </div>
+
+        <!-- Simulated App Grid Icons -->
+        <div class="grid grid-cols-4 gap-4 px-2 mt-4 pt-4 border-t border-white/10">
+          <div class="flex flex-col items-center">
+            <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-green-500 to-emerald-400 flex items-center justify-center text-white text-lg shadow">📞</div>
+            <span class="text-[10px] text-white/80 mt-1">Phone</span>
+          </div>
+          <div class="flex flex-col items-center">
+            <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-500 to-cyan-400 flex items-center justify-center text-white text-lg shadow">💬</div>
+            <span class="text-[10px] text-white/80 mt-1">Messages</span>
+          </div>
+          <div class="flex flex-col items-center">
+            <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-rose-500 to-pink-400 flex items-center justify-center text-white text-lg shadow">🎵</div>
+            <span class="text-[10px] text-white/80 mt-1">Music</span>
+          </div>
+          <div class="flex flex-col items-center">
+            <div class="w-12 h-12 rounded-2xl bg-black border border-yellow-400 flex items-center justify-center overflow-hidden shadow">
+              <img src="./assets/icons/ic_gold_on_black.webp" class="w-full h-full object-cover">
+            </div>
+            <span class="text-[10px] text-white/80 mt-1 font-semibold">Locket</span>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ============================================== -->
+  <!-- MODAL: LOGIN TO LOCKET ACCOUNT                -->
+  <!-- ============================================== -->
+  <div id="login-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-[32px] p-6 shadow-2xl">
+      <div class="flex items-center justify-between pb-3 border-b border-zinc-900">
+        <div class="flex items-center gap-2">
+          <img src="./assets/icons/ic_gold_on_black.webp" class="w-7 h-7 rounded-full border border-yellow-400" alt="Logo">
+          <h3 class="text-base font-bold text-white">Log in to Locket</h3>
+        </div>
+        <button onclick="closeModal('login-modal')" class="w-8 h-8 rounded-full bg-zinc-900 text-zinc-400 hover:text-white flex items-center justify-center">✕</button>
+      </div>
+
+      <form onsubmit="handleLogin(event)" class="py-4 space-y-3.5">
+        <div id="login-error-msg" class="hidden p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs"></div>
+
+        <div>
+          <label class="block text-xs font-semibold text-zinc-300 mb-1">Email Address</label>
+          <input id="login-email" type="email" placeholder="you@email.com" required class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-yellow-400">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-zinc-300 mb-1">Password</label>
+          <input id="login-password" type="password" placeholder="••••••••" required class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-yellow-400">
+        </div>
+
+        <button id="login-submit-btn" type="submit" class="w-full py-2.5 rounded-xl bg-yellow-400 hover:bg-yellow-300 text-black font-bold text-xs shadow-lg transition flex items-center justify-center gap-2">
+          <span>Log In</span>
+          <span>➔</span>
+        </button>
+
+        <p class="text-[11px] text-zinc-500 text-center pt-2">
+          Authenticates securely via Firebase Identity Toolkit with full iOS device emulation. Session is stored locally.
+        </p>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- MODAL: LOCKET GOLD & APP ICONS                -->
+  <!-- ============================================== -->
+  <div id="gold-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-[32px] p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-4 border-b border-zinc-900">
+        <div class="flex items-center gap-2">
+          <img src="./assets/icons/assets_png_locket_gold_logo.png" class="h-6 object-contain" alt="Locket Gold" onerror="this.src='./assets/icons/ic_gold_on_black.webp'">
+          <h3 class="text-base font-bold text-yellow-400">Locket Gold Studio</h3>
+        </div>
+        <button onclick="closeModal('gold-modal')" class="w-8 h-8 rounded-full bg-zinc-900 text-zinc-400 hover:text-white flex items-center justify-center">✕</button>
+      </div>
+
+      <!-- Gold Hero Graphic from Native APK -->
+      <div class="my-4 relative rounded-2xl overflow-hidden bg-gradient-to-tr from-amber-600/30 via-yellow-500/20 to-black border border-yellow-500/30 p-4 flex items-center gap-4">
+        <img src="./assets/icons/assets_png_rewarded_referrals_gold_popup_hero.png" class="w-20 h-20 object-contain drop-shadow" alt="Gold Hero" onerror="this.src='./assets/icons/ic_gold_on_black.webp'">
+        <div>
+          <span class="px-2 py-0.5 rounded-full bg-yellow-400 text-black text-[10px] font-black uppercase tracking-wider">Unlocked</span>
+          <h4 class="text-sm font-bold text-white mt-1">Locket Gold Active ✨</h4>
+          <p class="text-[11px] text-zinc-300">Custom app icons, premium widget frames, and unlimited friend connections.</p>
+        </div>
+      </div>
+
+      <div class="py-2">
+        <h4 class="text-xs font-bold text-zinc-300 uppercase tracking-wider mb-3">Choose App Icon (Extracted from APK)</h4>
+        <!-- App Icons Grid -->
+        <div id="locket-icons-grid" class="grid grid-cols-3 gap-3">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- MODAL: MONTHLY REWIND RECAP                    -->
+  <!-- ============================================== -->
+  <div id="rewind-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-[32px] p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-3 border-b border-zinc-900">
+        <div class="flex items-center gap-2">
+          <span class="text-lg">💫</span>
+          <h3 class="text-base font-bold text-white">Monthly Rewind</h3>
+        </div>
+        <button onclick="closeModal('rewind-modal')" class="w-8 h-8 rounded-full bg-zinc-900 text-zinc-400 hover:text-white flex items-center justify-center">✕</button>
+      </div>
+
+      <!-- Rewind Hero Banner from APK -->
+      <div class="my-4 relative rounded-2xl overflow-hidden aspect-[16/9] border border-indigo-500/30 shadow-lg">
+        <img src="./assets/icons/assets_png_monthly_rewind_banner_background.png" class="w-full h-full object-cover" alt="Rewind Banner" onerror="this.src='https://images.unsplash.com/photo-1518495973542-4542c06a5843?auto=format&fit=crop&w=800&q=80'">
+        <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent p-4 flex flex-col justify-end">
+          <span class="text-xs font-bold text-yellow-400 uppercase tracking-widest">October 2026</span>
+          <h4 class="text-lg font-black text-white drop-shadow">Your Best Moments</h4>
+          <p class="text-xs text-zinc-300">A look back at photos shared with your closest circle.</p>
+        </div>
+      </div>
+
+      <!-- Rewind Moments Carousel -->
+      <div class="space-y-3">
+        <div class="flex items-center justify-between text-xs font-bold text-zinc-400 px-1">
+          <span>TOP HIGHLIGHTS</span>
+          <span id="rewind-stat-count" class="text-yellow-400">41 photos</span>
+        </div>
+        <div id="rewind-moments-grid" class="grid grid-cols-2 gap-2.5">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- MODAL: MOMENT VIEWS & STATS                    -->
+  <!-- ============================================== -->
+  <div id="views-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-[32px] p-6 shadow-2xl">
+      <div class="flex items-center justify-between pb-3 border-b border-zinc-900">
+        <div class="flex items-center gap-2">
+          <span class="text-base">👁️</span>
+          <h3 class="text-base font-bold text-white">Moment Details</h3>
+        </div>
+        <button onclick="closeModal('views-modal')" class="w-8 h-8 rounded-full bg-zinc-900 text-zinc-400 hover:text-white flex items-center justify-center">✕</button>
+      </div>
+
+      <div class="py-4 space-y-4">
+        <!-- View Count Pill -->
+        <div class="p-3 bg-zinc-900 rounded-2xl flex items-center justify-between border border-zinc-800">
+          <span class="text-xs font-semibold text-zinc-300">Total Views</span>
+          <span id="modal-views-count" class="text-sm font-bold text-yellow-400">0</span>
+        </div>
+
+        <!-- Viewers List -->
+        <div>
+          <span class="block text-xs font-semibold text-zinc-400 mb-2">Viewed by Friends:</span>
+          <div id="modal-viewers-list" class="flex flex-col gap-2 max-h-48 overflow-y-auto">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+        <!-- Delete Moment Option -->
+        <div class="pt-2 border-t border-zinc-900">
+          <button id="modal-delete-btn" onclick="deleteCurrentMoment()" class="w-full py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold text-xs border border-red-500/20 transition flex items-center justify-center gap-2">
+            <span>Delete this Moment</span>
+            <span>🗑️</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- MODAL: FRIENDS & STREAKS                      -->
+  <!-- ============================================== -->
+  <div id="friends-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-[32px] p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-4 border-b border-zinc-900">
+        <div class="flex items-center gap-2">
+          <span class="text-lg">🔥</span>
+          <h3 class="text-base font-bold text-white">Friends & Daily Streaks</h3>
+        </div>
+        <button onclick="closeModal('friends-modal')" class="w-8 h-8 rounded-full bg-zinc-900 text-zinc-400 hover:text-white flex items-center justify-center">✕</button>
+      </div>
+
+      <!-- Add Friend Box -->
+      <div class="my-4 p-4 rounded-2xl bg-zinc-900 border border-zinc-800">
+        <label class="block text-xs font-semibold text-zinc-300 mb-2">Add Friend by Username</label>
+        <div class="flex items-center gap-2">
+          <div class="flex-1 bg-black border border-zinc-800 rounded-full px-3 py-2 flex items-center">
+            <span class="text-xs text-zinc-500 mr-1">@</span>
+            <input id="new-friend-username" type="text" placeholder="username" class="bg-transparent text-xs text-white focus:outline-none w-full">
+          </div>
+          <button onclick="addNewFriend()" class="px-4 py-2 bg-yellow-400 text-black font-bold text-xs rounded-full hover:bg-yellow-300 transition">
+            Add +
+          </button>
+        </div>
+        <div class="mt-3 pt-3 border-t border-zinc-800/80 flex items-center justify-between">
+          <span class="text-[11px] text-zinc-400">Share your invite link:</span>
+          <button onclick="copyInviteLink()" class="text-xs text-yellow-400 hover:underline font-semibold">Copy Link 📋</button>
+        </div>
+      </div>
+
+      <!-- Friends List -->
+      <div class="flex flex-col gap-2.5" id="friends-modal-list">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- MODAL: WIDGET SETUP GUIDE                     -->
+  <!-- ============================================== -->
+  <div id="guide-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-[32px] p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-4 border-b border-zinc-900">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <span>📲 How to Add Locket Widget</span>
+        </h3>
+        <button onclick="closeModal('guide-modal')" class="w-8 h-8 rounded-full bg-zinc-900 text-zinc-400 hover:text-white flex items-center justify-center">✕</button>
+      </div>
+
+      <div class="py-4 space-y-4">
+        <div class="p-3 bg-zinc-900 rounded-2xl flex items-center gap-3">
+          <img src="./assets/icons/assets_widget_widget_install_1.png" class="w-12 h-12 object-contain rounded-lg bg-black" onerror="this.style.display='none'">
+          <div>
+            <h4 class="text-xs font-bold text-white">Step 1: Press & Hold Screen</h4>
+            <p class="text-[11px] text-zinc-400">Long press any empty area on your phone's home screen until the apps jiggle.</p>
+          </div>
+        </div>
+
+        <div class="p-3 bg-zinc-900 rounded-2xl flex items-center gap-3">
+          <img src="./assets/icons/assets_widget_widget_install_2.png" class="w-12 h-12 object-contain rounded-lg bg-black" onerror="this.style.display='none'">
+          <div>
+            <h4 class="text-xs font-bold text-white">Step 2: Tap the (+) Add Button</h4>
+            <p class="text-[11px] text-zinc-400">Search for "Locket" in your widgets menu.</p>
+          </div>
+        </div>
+
+        <div class="p-3 bg-zinc-900 rounded-2xl flex items-center gap-3">
+          <img src="./assets/icons/assets_widget_widget_install_3.png" class="w-12 h-12 object-contain rounded-lg bg-black" onerror="this.style.display='none'">
+          <div>
+            <h4 class="text-xs font-bold text-white">Step 3: Pick Size & Place</h4>
+            <p class="text-[11px] text-zinc-400">Choose Small (2x2) or Medium (4x2) and place it on your home screen.</p>
+          </div>
+        </div>
+
+        <div class="p-3 bg-zinc-900 rounded-2xl flex items-center gap-3">
+          <img src="./assets/icons/assets_widget_widget_install_4.png" class="w-12 h-12 object-contain rounded-lg bg-black" onerror="this.style.display='none'">
+          <div>
+            <h4 class="text-xs font-bold text-white">Step 4: See Live Moments!</h4>
+            <p class="text-[11px] text-zinc-400">Your widget will now receive live photos whenever your friends snap one!</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="app-toast" class="fixed bottom-6 z-50 glass-pill px-4 py-2.5 rounded-full text-xs font-semibold text-white shadow-2xl opacity-0 pointer-events-none translate-y-4 transition-all duration-300"></div>
+
+  <!-- Scripts -->
+  <script src="./app.js?v=3.1"></script>
+</body>
+</html>

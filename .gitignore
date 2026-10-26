@@ -1,0 +1,5 @@
+session.json
+.video_cache/
+__pycache__/
+*.pyc
+.DS_Store
