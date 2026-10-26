@@ -276,6 +276,15 @@ const LocketCloud = {
   STORAGE_VIDEO_URL: "https://firebasestorage.googleapis.com/v0/b/locket-video/o",
   FIRESTORE_BASE: "https://firestore.googleapis.com/v1/projects/locket-4252a/databases/(default)/documents",
 
+  randomId(len = 20) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let res = '';
+    for (let i = 0; i < len; i++) {
+      res += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return res;
+  },
+
   getSession() {
     try {
       const raw = localStorage.getItem('locket_cloud_session');
@@ -385,8 +394,64 @@ const LocketCloud = {
   },
 
   async getFeed() {
-    const res = await this.callApi('getLatestMomentV2', { should_count_missed_moments: true });
-    return res.data || res.moments || [];
+    const friends = await this.getFriends();
+    const friendUids = (friends || []).map(f => f.id).filter(Boolean);
+
+    const allMoments = [];
+    const seenMids = new Set();
+
+    // 1. First get overall latest moment from feed
+    try {
+      const initialRes = await this.callApi('getLatestMomentV2', {
+        should_count_missed_moments: true,
+        include_group_moments: true
+      });
+      const initItems = initialRes.data || initialRes.moments || [];
+      for (const m of initItems) {
+        const mid = m.canonical_uid || m.id || m.moment_uid;
+        if (mid && !seenMids.has(mid)) {
+          seenMids.add(mid);
+          allMoments.push(m);
+        }
+      }
+    } catch (e) {
+      console.warn('Initial getFeed error:', e);
+    }
+
+    // 2. Fetch moments across all friends in parallel batches
+    if (friendUids.length > 0) {
+      const batchSize = 5;
+      for (let i = 0; i < friendUids.length; i += batchSize) {
+        const batch = friendUids.slice(i, i + batchSize);
+        await Promise.all(batch.map(async (targetUid) => {
+          const others = friendUids.filter(uid => uid !== targetUid);
+          try {
+            const res = await this.callApi('getLatestMomentV2', {
+              should_count_missed_moments: true,
+              include_group_moments: true,
+              excluded_users: others
+            });
+            const items = res.data || res.moments || [];
+            for (const m of items) {
+              const mid = m.canonical_uid || m.id || m.moment_uid;
+              if (mid && !seenMids.has(mid)) {
+                seenMids.add(mid);
+                allMoments.push(m);
+              }
+            }
+          } catch (err) {}
+        }));
+      }
+    }
+
+    // Sort moments chronologically descending (newest first)
+    allMoments.sort((a, b) => {
+      const tsA = (a.date && a.date._seconds) ? a.date._seconds * 1000 : (new Date(a.created_at || 0).getTime() || 0);
+      const tsB = (b.date && b.date._seconds) ? b.date._seconds * 1000 : (new Date(b.created_at || 0).getTime() || 0);
+      return tsB - tsA;
+    });
+
+    return allMoments;
   },
 
   async getFriends() {
@@ -435,7 +500,7 @@ const LocketCloud = {
     const ext = isVideo ? 'mp4' : 'webp';
     const contentType = isVideo ? 'video/mp4' : 'image/webp';
     const folder = isVideo ? 'videos' : 'thumbnails';
-    const randId = Array.from(crypto.getRandomValues(new Uint8Array(10))).map(b => b.toString(16).padStart(2, '0')).join('');
+    const randId = this.randomId(20);
     const objectPath = `users/${session.uid}/moments/${folder}/${randId}.${ext}`;
     const encodedName = encodeURIComponent(objectPath);
     const baseUrl = isVideo ? this.STORAGE_VIDEO_URL : this.STORAGE_IMG_URL;
@@ -739,13 +804,19 @@ async function fetchLiveFeed() {
             }
           } catch(e) {}
         }
+        const friend = (state.friends || []).find(f => f.id === m.user);
+        const senderName = friend ? friend.name : (m.user_name || (m.user ? `Friend (${m.user.slice(0, 5)})` : 'Friend'));
+        const senderUsername = friend ? friend.username : (m.username || m.user_username || 'user');
+        const senderAvatar = friend ? friend.avatar : (toCdnUrl(m.user_avatar) || AESTHETIC_PRESETS[0]);
+
         return {
           id: m.canonical_uid || m.id || m.moment_uid,
           canonical_uid: m.canonical_uid || m.id || m.moment_uid,
+          user_uid: m.user,
           sender: {
-            name: m.user_name || (m.user ? `Friend (${m.user.slice(0, 5)})` : 'Friend'),
-            username: m.username || m.user_username || 'user',
-            avatar: toCdnUrl(m.user_avatar) || AESTHETIC_PRESETS[0]
+            name: senderName,
+            username: senderUsername,
+            avatar: senderAvatar
           },
           imageUrl: toCdnUrl(m.thumbnail_url || m.image_url),
           videoUrl: toCdnUrl(m.video_url),
@@ -1000,11 +1071,11 @@ function takePhoto() {
       ctx.scale(-1, 1);
     }
     ctx.drawImage(video, startX, startY, size, size, 0, 0, size, size);
-    dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    dataUrl = canvas.toDataURL('image/webp', 0.85);
     canvas.toBlob((blob) => {
       state.rawMediaBlob = blob;
-      state.rawMediaType = 'image/jpeg';
-    }, 'image/jpeg', 0.9);
+      state.rawMediaType = 'image/webp';
+    }, 'image/webp', 0.85);
   } else {
     dataUrl = AESTHETIC_PRESETS[state.presetIndex % AESTHETIC_PRESETS.length];
     state.presetIndex++;
@@ -1270,6 +1341,35 @@ function dataURLtoBlob(dataurl) {
   return new Blob([u8arr], { type: mime });
 }
 
+async function convertToWebpBlob(blob) {
+  if (!blob) return null;
+  if (blob.type === 'image/webp') return blob;
+  return new Promise((resolve) => {
+    try {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width || 800;
+        canvas.height = img.naturalHeight || img.height || 800;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        canvas.toBlob((webpBlob) => {
+          resolve(webpBlob || blob);
+        }, 'image/webp', 0.85);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(blob);
+      };
+      img.src = url;
+    } catch (e) {
+      resolve(blob);
+    }
+  });
+}
+
 async function extractVideoThumbnail(videoBlob) {
   return new Promise((resolve) => {
     try {
@@ -1329,8 +1429,21 @@ async function sendLocket() {
       } else {
         imageBlob = state.rawMediaBlob;
         if (!imageBlob && state.capturedPhoto) {
-          imageBlob = dataURLtoBlob(state.capturedPhoto);
+          if (typeof state.capturedPhoto === 'string' && state.capturedPhoto.startsWith('data:')) {
+            imageBlob = dataURLtoBlob(state.capturedPhoto);
+          } else if (typeof state.capturedPhoto === 'string' && state.capturedPhoto.startsWith('http')) {
+            try {
+              const resp = await fetch(state.capturedPhoto);
+              imageBlob = await resp.blob();
+            } catch (e) {
+              console.warn('Fetch fallback image error:', e);
+            }
+          }
         }
+      }
+
+      if (imageBlob && !isVideo) {
+        imageBlob = await convertToWebpBlob(imageBlob);
       }
 
       const isGold = state.noteType === 'gold';
